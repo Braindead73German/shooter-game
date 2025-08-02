@@ -23,7 +23,7 @@
     position:absolute; top:10px; right:10px;
     background:#5e81ac; border:none; color:#fff;
     padding:10px 14px; border-radius:8px;
-    font-size:14px; z-index:5;
+    font-size:14px; z-index:10;
     touch-action: manipulation;
   }
   #shop {
@@ -34,15 +34,17 @@
     padding:20px;
     color:#fff;
     overflow:hidden;
+    z-index:9;
   }
   .shop-panel {
     max-width: 360px;
-    margin: 0 auto;
-    background: rgba(20,30,80,0.9);
+    margin: 60px auto;
+    background: rgba(20,30,80,0.95);
     border:2px solid #88c0d0;
     border-radius:12px;
     padding:16px 20px;
     text-align:center;
+    position: relative;
   }
   .shop-panel h1 { margin:0; font-size:24px; }
   .shop-item { margin-top:12px; display:flex; justify-content:space-between; align-items:center; }
@@ -91,22 +93,21 @@
     <div style="margin-top:8px;">Auto-Fire: <strong>20 coins</strong></div>
     <div class="shop-item">
       <div>Auto-Fire</div>
-      <button id="buyAuto" class="btn">Buy</button>
+      <button id="buyAuto" class="btn">Buy (20)</button>
     </div>
     <div style="margin-top:12px; font-size:12px;">
-      Hold right side of screen to shoot when unlocked.<br>
+      Hold right side to aim &amp; shoot when unlocked.<br>
       Tap outside panel or Shop to close.
     </div>
-    <div style="margin-top:8px; font-size:12px;">Auto-fire: <span id="statusAuto">Locked</span></div>
-    <div style="margin-top:12px;">
-      Coins: <span id="shopCoins">0</span>
-    </div>
+    <div style="margin-top:8px; font-size:14px;">Status: <span id="statusAuto">Locked</span></div>
+    <div style="margin-top:8px; font-size:14px;">Coins: <span id="shopCoins">0</span></div>
   </div>
 </div>
 <div id="virtual-stick"><div id="stick-handle"></div></div>
 <div id="footer-hint">Move with left drag; aim &amp; shoot on right side</div>
 
 <script>
+// canvas setup
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let W, H;
@@ -114,7 +115,7 @@ function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = win
 window.addEventListener('resize', resize);
 resize();
 
-// State
+// state
 let last = performance.now();
 let coins = 0;
 let autoFire = false;
@@ -123,12 +124,12 @@ let autoFireTimer = 0;
 const autoFireCooldown = 0.1;
 let bullets = [];
 let enemies = [];
-const player = { x: W/2, y: H/2, r: 18, speed: 240 };
+const player = { x: W/2, y: H/2, r: 18, speed: 220 };
 let moveVec = { x:0, y:0 };
 let aiming = false;
 let aimPos = { x: W/2, y: H/2 };
 
-// DOM refs
+// DOM
 const coinsEl = document.getElementById('coins');
 const shopCoins = document.getElementById('shopCoins');
 const shopBtn = document.getElementById('shopBtn');
@@ -136,7 +137,6 @@ const shopEl = document.getElementById('shop');
 const buyAutoBtn = document.getElementById('buyAuto');
 const statusAuto = document.getElementById('statusAuto');
 const stickHandle = document.getElementById('stick-handle');
-const virtualStick = document.getElementById('virtual-stick');
 
 function updateHUD(){
   coinsEl.textContent = coins;
@@ -147,19 +147,19 @@ function updateHUD(){
 }
 updateHUD();
 
-// Touch input
+// input handling
 let stickTouch = null;
 let stickStart = null;
 
 canvas.addEventListener('touchstart', e=>{
   e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.clientX < W/2){ // movement zone
+  for (const t of Array.from(e.changedTouches)){
+    if (t.clientX < W/2 && stickTouch === null){ // movement
       stickTouch = t.identifier;
       stickStart = { x: t.clientX, y: t.clientY };
       moveVec = { x:0, y:0 };
       updateStick(0,0);
-    } else { // aim/shoot
+    } else if (t.clientX >= W/2){ // aim/shoot
       aiming = true;
       aimPos.x = t.clientX;
       aimPos.y = t.clientY;
@@ -169,8 +169,8 @@ canvas.addEventListener('touchstart', e=>{
 
 canvas.addEventListener('touchmove', e=>{
   e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.identifier === stickTouch){
+  for (const t of Array.from(e.changedTouches)){
+    if (t.identifier === stickTouch){
       const dx = t.clientX - stickStart.x;
       const dy = t.clientY - stickStart.y;
       const max = 50;
@@ -180,7 +180,7 @@ canvas.addEventListener('touchmove', e=>{
       moveVec.y = ny;
       updateStick(nx, ny);
     }
-    if(aiming && t.clientX >= W/2){
+    if (aiming && t.clientX >= W/2){
       aimPos.x = t.clientX;
       aimPos.y = t.clientY;
     }
@@ -189,13 +189,13 @@ canvas.addEventListener('touchmove', e=>{
 
 canvas.addEventListener('touchend', e=>{
   e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.identifier === stickTouch){
+  for (const t of Array.from(e.changedTouches)){
+    if (t.identifier === stickTouch){
       stickTouch = null;
       moveVec = { x:0, y:0 };
       updateStick(0,0);
     }
-    if(aiming){
+    if (aiming){
       aiming = false;
     }
   }
@@ -206,10 +206,19 @@ function updateStick(nx, ny){
   stickHandle.style.transform = `translate(${nx*radius}px, ${ny*radius}px)`;
 }
 
-// Shop toggle
-shopBtn.addEventListener('click', toggleShop);
+// shop toggle
+shopBtn.addEventListener('click', e=>{
+  toggleShop();
+});
 shopEl.addEventListener('click', e=>{
-  if(e.target === shopEl) toggleShop();
+  if (e.target === shopEl) toggleShop();
+});
+buyAutoBtn.addEventListener('click', ()=>{
+  if (!autoFire && coins >= 20){
+    coins -= 20;
+    autoFire = true;
+    updateHUD();
+  }
 });
 
 function toggleShop(){
@@ -217,17 +226,10 @@ function toggleShop(){
   shopEl.style.display = shopOpen ? 'block' : 'none';
   updateHUD();
 }
-buyAutoBtn.addEventListener('click', ()=>{
-  if(!autoFire && coins >= 20){
-    coins -= 20;
-    autoFire = true;
-    updateHUD();
-  }
-});
 
-// Game logic
+// enemy spawn
 function spawnEnemy(){
-  if(shopOpen) return;
+  if (shopOpen) return;
   const side = Math.floor(Math.random()*4);
   let x,y;
   if(side===0){ x=Math.random()*W; y=-25; }
@@ -238,7 +240,7 @@ function spawnEnemy(){
 }
 setInterval(spawnEnemy, 2000);
 
-// Shooting
+// shoot
 function shoot(){
   const dx = aimPos.x - player.x;
   const dy = aimPos.y - player.y;
@@ -252,10 +254,10 @@ function shoot(){
   });
 }
 
-// Utility
+// helpers
 function dist(ax,ay,bx,by){ return Math.hypot(bx-ax, by-ay); }
 
-// Main loop
+// main loop
 function loop(t){
   const delta = Math.min(0.033, (t - last)/1000);
   last = t;
@@ -263,7 +265,7 @@ function loop(t){
   if(!shopOpen){
     // movement
     const mvLen = Math.hypot(moveVec.x, moveVec.y);
-    if(mvLen > 0.1){
+    if (mvLen > 0.1){
       player.x += (moveVec.x / mvLen) * player.speed * delta;
       player.y += (moveVec.y / mvLen) * player.speed * delta;
     }
@@ -272,20 +274,20 @@ function loop(t){
     player.y = Math.max(player.r, Math.min(H-player.r, player.y));
 
     // shooting
-    if(autoFire && aiming){
+    if (autoFire && aiming){
       autoFireTimer += delta;
-      if(autoFireTimer >= autoFireCooldown){
+      if (autoFireTimer >= autoFireCooldown){
         shoot();
         autoFireTimer = 0;
       }
-    } else if(aiming && !autoFire){
-      // fire once per touchstart
-      if(autoFireTimer <= 0){
+    } else if (aiming && !autoFire){
+      // single shot per touch
+      if (autoFireTimer <= 0){
         shoot();
-        autoFireTimer = 0.1; // simple debounce
+        autoFireTimer = 0.15; // debounce
       }
     }
-    if(!aiming){
+    if (!aiming){
       autoFireTimer = 0;
     }
 
@@ -301,23 +303,26 @@ function loop(t){
       const dx = player.x - e.x;
       const dy = player.y - e.y;
       const d = Math.hypot(dx,dy);
-      if(d>0){
+      if (d>0){
         e.x += (dx/d)*e.speed*delta;
         e.y += (dy/d)*e.speed*delta;
       }
     });
 
     // collisions
-    bullets.forEach((b, bi)=>{
-      enemies.forEach((e, ei)=>{
-        if(dist(b.x,b.y,e.x,e.y) < b.r + e.r){
+    for (let bi=bullets.length-1; bi>=0; bi--){
+      for (let ei=enemies.length-1; ei>=0; ei--){
+        const b = bullets[bi];
+        const e = enemies[ei];
+        if (dist(b.x,b.y,e.x,e.y) < b.r + e.r){
           enemies.splice(ei,1);
           bullets.splice(bi,1);
           coins += 1;
           updateHUD();
+          break;
         }
-      });
-    });
+      }
+    }
   }
 
   draw();
@@ -326,11 +331,10 @@ function loop(t){
 let last = performance.now();
 requestAnimationFrame(loop);
 
-// Draw
+// draw function
 function draw(){
   ctx.clearRect(0,0,W,H);
-
-  // player arrow
+  // player
   const angle = Math.atan2(aimPos.y - player.y, aimPos.x - player.x);
   ctx.save();
   ctx.translate(player.x, player.y);
@@ -359,9 +363,6 @@ function draw(){
     ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
     ctx.fill();
   });
-
-  // optional UI hint when shop closed
-  // shop overlay drawn by CSS
 }
 
 // prevent context menu
