@@ -1,285 +1,160 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Minimal Mobile Shooter</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<style>
-  body { margin:0; background:#1e293b; overflow:hidden; font-family:system-ui,sans-serif; }
-  canvas { display:block; touch-action:none; }
-  #shopBtn { position:absolute; top:10px; right:10px; padding:10px 14px; background:#5e81ac; color:#fff; border:none; border-radius:6px; z-index:10; }
-  #shop { position:absolute; inset:0; background:rgba(0,0,0,0.85); display:none; color:#fff; align-items:center; justify-content:center; display:flex; }
-  .panel { background:#0f1f3f; padding:20px; border:2px solid #88c0d0; border-radius:12px; text-align:center; width:280px; }
-  .btn { padding:10px 14px; background:#a3be8c; border:none; border-radius:6px; cursor:pointer; color:#0f1f3f; font-weight:600; }
-  .btn:disabled { background:#444; color:#999; cursor:not-allowed; }
-  #debug { position:fixed; left:0; bottom:0; right:0; background:rgba(0,0,0,0.7); color:#fff; font-size:12px; padding:4px; z-index:20; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Wave Shooter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0; background:#111; color:#eee; font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif; display:flex; flex-direction:column; align-items:center; }
+    #game { border:2px solid #444; background:#000; display:block; margin-top:8px; }
+    .overlay { position:fixed; top:8px; left:8px; background:rgba(0,0,0,.7); padding:8px 12px; border-radius:10px; font-size:14px; }
+    .btn { background:#222; border:1px solid #555; padding:6px 12px; border-radius:8px; cursor:pointer; margin-right:6px; color:#eee; }
+    .btn:hover { background:#333; }
+    #controls { margin-top:6px; }
+  </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<button id="shopBtn">Shop</button>
-<div id="shop">
-  <div class="panel">
-    <h2>SHOP</h2>
-    <p>Auto-fire: 20 coins</p>
-    <button id="buyAuto" class="btn">Buy</button>
-    <p id="status">Status: Locked</p>
-    <p>Coins: <span id="shopCoins">0</span></p>
-    <p style="font-size:12px;">Tap outside to close.</p>
+  <h1 style="margin:8px 0;">Wave Shooter HTML Game</h1>
+  <canvas id="game" width="480" height="640" aria-label="Wave shooter game"></canvas>
+  <div id="controls">
+    <button class="btn" id="startBtn">Start / Restart</button>
+    <span style="margin-left:8px;">Move: Arrow keys / A,D. Shoot: Space</span>
   </div>
-</div>
-<div id="debug">Initializing...</div>
-<script>
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H;
-function resize(){ W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
-window.addEventListener('resize', resize);
-resize();
+  <div class="overlay" id="status">Press Start</div>
 
-// State
-let last = performance.now();
-let coins = 0;
-let autoFire = false;
-let shopOpen = false;
-let autoFireTimer=0;
-const autoFireCooldown=0.1;
-let bullets=[];
-let enemies=[];
-const player={x:W/2,y:H/2,r:18,speed:220};
-let moveVec={x:0,y:0};
-let aiming=false;
-let aimPos={x:W/2,y:H/2};
-const debugEl=document.getElementById('debug');
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width; let height = canvas.height;
 
-const shopBtn=document.getElementById('shopBtn');
-const shopEl=document.getElementById('shop');
-const buyAuto=document.getElementById('buyAuto');
-const status=document.getElementById('status');
-const shopCoins=document.getElementById('shopCoins');
+    // Game state
+    let player, bullets, enemies, lastSpawn, wave, score, running, lastShot;
 
-function updateHUD(){
-  status.textContent='Status: '+(autoFire?'Owned':'Locked');
-  shopCoins.textContent=coins;
-  buyAuto.disabled = autoFire || coins<20;
-  buyAuto.textContent = autoFire ? 'Owned' : 'Buy 20';
-}
-updateHUD();
-
-// Input
-let stickTouch=null;
-let stickStart=null;
-
-canvas.addEventListener('touchstart',e=>{
-  e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.clientX < W/2 && stickTouch === null){ // movement zone
-      stickTouch = t.identifier;
-      stickStart = {x:t.clientX,y:t.clientY};
-      moveVec={x:0,y:0};
-    } else if(t.clientX >= W/2){
-      aiming=true;
-      aimPos.x=t.clientX;
-      aimPos.y=t.clientY;
-    }
-  }
-}, {passive:false});
-
-canvas.addEventListener('touchmove',e=>{
-  e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.identifier===stickTouch){
-      const dx=t.clientX-stickStart.x;
-      const dy=t.clientY-stickStart.y;
-      const max=50;
-      moveVec.x=Math.max(-1,Math.min(1, dx/max));
-      moveVec.y=Math.max(-1,Math.min(1, dy/max));
-    }
-    if(aiming && t.clientX>=W/2){
-      aimPos.x=t.clientX;
-      aimPos.y=t.clientY;
-    }
-  }
-}, {passive:false});
-
-canvas.addEventListener('touchend',e=>{
-  e.preventDefault();
-  for(const t of Array.from(e.changedTouches)){
-    if(t.identifier===stickTouch){
-      stickTouch=null;
-      moveVec={x:0,y:0};
-    }
-    if(aiming){
-      aiming=false;
-    }
-  }
-}, {passive:false});
-
-// Shop
-shopBtn.addEventListener('click',toggleShop);
-shopEl.addEventListener('click',e=>{
-  if(e.target===shopEl) toggleShop();
-});
-buyAuto.addEventListener('click',()=>{
-  if(!autoFire && coins>=20){
-    coins-=20;
-    autoFire=true;
-    updateHUD();
-  }
-});
-function toggleShop(){
-  shopOpen=!shopOpen;
-  shopEl.style.display=shopOpen?'flex':'none';
-  updateHUD();
-}
-
-// Spawn enemy every 2s
-function spawnEnemy(){
-  if(shopOpen) return;
-  const side=Math.floor(Math.random()*4);
-  let x,y;
-  if(side===0){x=Math.random()*W; y=-30;}
-  else if(side===1){x=Math.random()*W; y=H+30;}
-  else if(side===2){x=-30; y=Math.random()*H;}
-  else {x=W+30; y=Math.random()*H;}
-  enemies.push({x,y,r:14,speed:80});
-}
-setInterval(spawnEnemy,2000);
-
-// Shooting
-function shoot(){
-  const dx=aimPos.x-player.x;
-  const dy=aimPos.y-player.y;
-  const ang=Math.atan2(dy,dx);
-  bullets.push({x:player.x,y:player.y,angle:ang,speed:500,r:5});
-}
-
-// Utility
-function dist(ax,ay,bx,by){ return Math.hypot(bx-ax, by-ay); }
-
-// Main loop
-function loop(t){
-  const delta=Math.min(0.033,(t-last)/1000);
-  last=t;
-
-  if(!shopOpen){
-    // movement
-    const len=Math.hypot(moveVec.x, moveVec.y);
-    if(len>0.1){
-      player.x += (moveVec.x/len)*player.speed*delta;
-      player.y += (moveVec.y/len)*player.speed*delta;
-    }
-    player.x = Math.max(player.r, Math.min(W-player.r, player.x));
-    player.y = Math.max(player.r, Math.min(H-player.r, player.y));
-
-    // shooting
-    if(autoFire && aiming){
-      autoFireTimer+=delta;
-      if(autoFireTimer>=autoFireCooldown){
-        shoot();
-        autoFireTimer=0;
-      }
-    } else if(aiming && !autoFire){
-      shoot();
-      aiming=false; // single-shot per touch
+    function reset() {
+      player = { x: width/2, y: height - 40, w: 24, h: 12, speed: 4, cooldown: 200 };
+      bullets = [];
+      enemies = [];
+      lastSpawn = 0;
+      wave = 1;
+      score = 0;
+      running = true;
+      lastShot = 0;
+      document.getElementById('status').textContent = 'Wave 1 - Score: 0';
     }
 
-    // update bullets
-    bullets = bullets.filter(b=>{
-      b.x += Math.cos(b.angle)*b.speed*delta;
-      b.y += Math.sin(b.angle)*b.speed*delta;
-      return b.x>=-10 && b.x<=W+10 && b.y>=-10 && b.y<=H+10;
-    });
-
-    // update enemies
-    enemies.forEach(e=>{
-      const dx=player.x-e.x;
-      const dy=player.y-e.y;
-      const d=Math.hypot(dx,dy);
-      if(d>0){
-        e.x += (-dx/d)*-e.speed*delta; // chase
-        e.y += (-dy/d)*-e.speed*delta;
-      }
-    });
-
-    // collisions
-    for(let bi=bullets.length-1; bi>=0; bi--){
-      for(let ei=enemies.length-1; ei>=0; ei--){
-        const b=bullets[bi], e=enemies[ei];
-        if(dist(b.x,b.y,e.x,e.y) < b.r + e.r){
-          enemies.splice(ei,1);
-          bullets.splice(bi,1);
-          coins+=1;
-          updateHUD();
-          break;
-        }
+    function spawnWave(n) {
+      const padding = 30;
+      for (let i = 0; i < n; i++) {
+        const cols = Math.min(n, 8);
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        const x = padding + col * ((width - padding*2) / cols) + 10;
+        const y = 40 + row * 40;
+        enemies.push({ x, y, w:20, h:12, vx: 0.5 * ((wave%2)?1:-1), hp:1, sway: Math.random()*0.5, baseX:x });
       }
     }
-  }
 
-  draw();
-  debugEl.textContent = `shopOpen=${shopOpen} autoFire=${autoFire} coins=${coins} enemies=${enemies.length} bullets=${bullets.length} move=(${moveVec.x.toFixed(2)},${moveVec.y.toFixed(2)}) aiming=${aiming}`;
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
+    function update(dt) {
+      if (!running) return;
+      // Player input
+      if (keys.ArrowLeft || keys.a) player.x -= player.speed;
+      if (keys.ArrowRight || keys.d) player.x += player.speed;
+      if (player.x < player.w/2) player.x = player.w/2;
+      if (player.x > width - player.w/2) player.x = width - player.w/2;
+      // Shooting
+      if ((keys.Space || keys[' ']) && performance.now() - lastShot > player.cooldown) {
+        bullets.push({ x: player.x, y: player.y - 10, r:4, vy:-6 });
+        lastShot = performance.now();
+      }
+      // Update bullets
+      bullets = bullets.filter(b => b.y > -10);
+      bullets.forEach(b => { b.y += b.vy; });
+      // Update enemies
+      enemies.forEach(e => {
+        // simple sway and horizontal movement
+        e.x = e.baseX + Math.sin(performance.now() / 300 + e.sway) * 15;
+        // drop slowly over time
+        e.y += 0.02 * dt;
+      });
+      // Collision bullet-enemy
+      bullets.forEach(b => {
+        enemies.forEach(e => {
+          if (Math.abs(b.x - e.x) < (e.w/2 + b.r) && Math.abs(b.y - e.y) < (e.h/2 + b.r)) {
+            e.hp -= 1;
+            b.dead = true;
+            if (e.hp <= 0) { e.dead = true; score += 10; }
+          }
+        });
+      });
+      bullets = bullets.filter(b => !b.dead);
+      enemies = enemies.filter(e => !e.dead);
+      // Next wave
+      if (enemies.length === 0 && performance.now() - lastSpawn > 500) {
+        wave += 1;
+        spawnWave(3 + wave * 2);
+        lastSpawn = performance.now();
+      }
+      // Enemy reach bottom -> game over
+      if (enemies.some(e => e.y + e.h/2 >= player.y - 4)) {
+        running = false;
+        document.getElementById('status').textContent = 'Game Over. Final Score: ' + score + ' (Wave ' + wave + ')';
+      } else {
+        document.getElementById('status').textContent = 'Wave ' + wave + ' - Score: ' + score;
+      }
+    }
 
-// Draw
-function draw(){
-  ctx.clearRect(0,0,W,H);
-  // player indicator
-  const angle=Math.atan2(aimPos.y-player.y, aimPos.x-player.x);
-  ctx.save();
-  ctx.translate(player.x, player.y);
-  ctx.rotate(angle);
-  ctx.fillStyle='#32e11e';
-  ctx.beginPath();
-  ctx.moveTo(20,0);
-  ctx.lineTo(-12,10);
-  ctx.lineTo(-12,-10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+    function draw() {
+      // clear
+      ctx.clearRect(0,0,width,height);
+      // player
+      ctx.fillStyle = '#0f0';
+      ctx.fillRect(player.x - player.w/2, player.y - player.h/2, player.w, player.h);
+      // bullets
+      bullets.forEach(b => {
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+      });
+      // enemies
+      enemies.forEach(e => {
+        ctx.fillStyle = '#f55';
+        ctx.fillRect(e.x - e.w/2, e.y - e.h/2, e.w, e.h);
+      });
+    }
 
-  // bullets
-  bullets.forEach(b=>{
-    ctx.fillStyle='#ff4f4f';
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-    ctx.fill();
-  });
+    let lastTime = performance.now();
+    function loop() {
+      const now = performance.now();
+      const dt = now - lastTime;
+      update(dt);
+      draw();
+      lastTime = now;
+      requestAnimationFrame(loop);
+    }
 
-  // enemies
-  enemies.forEach(e=>{
-    ctx.fillStyle='#e13636';
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
-    ctx.fill();
-  });
+    // Input handling
+    const keys = {};
+    window.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight',' ','a','d'].includes(e.key)) e.preventDefault(); });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
 
-  // simple crosshair on right when aiming
-  if(aiming){
-    ctx.strokeStyle='#ffffff';
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(aimPos.x-8, aimPos.y);
-    ctx.lineTo(aimPos.x+8, aimPos.y);
-    ctx.moveTo(aimPos.x, aimPos.y-8);
-    ctx.lineTo(aimPos.x, aimPos.y+8);
-    ctx.stroke();
-  }
-}
+    document.getElementById('startBtn').addEventListener('click', () => { reset(); });
 
-// HUD update helper
-function updateHUD(){
-  document.getElementById('coins').textContent=coins;
-  shopCoins.textContent=coins;
-  status.textContent='Status: '+(autoFire?'Owned':'Locked');
-  buyAuto.disabled = autoFire || coins < 20;
-  buyAuto.textContent = autoFire ? 'Owned' : 'Buy 20';
-}
+    // Resize to maintain crispness on high DPI
+    function resizeCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = 480 * ratio;
+      canvas.height = 640 * ratio;
+      canvas.style.width = '480px';
+      canvas.style.height = '640px';
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      width = 480; height = 640;
+    }
+    resizeCanvas();
+    spawnWave(5);
+    lastSpawn = performance.now();
+    loop();
 
-// Prevent default context menu
-window.addEventListener('contextmenu', e=>e.preventDefault());
-</script>
+    // Accessibility: allow restarting with R
+    window.addEventListener('keypress', e => { if (e.key.toLowerCase() === 'r') reset(); });
+  </script>
 </body>
 </html>
